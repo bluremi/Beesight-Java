@@ -1,7 +1,6 @@
 =====================================
 Beesight (Java) Version 1.0
 =====================================
-Author: bluremi@gmail.com
 
 OVERVIEW
 This is a java script that fetches meditation session data from InsightTimer.com
