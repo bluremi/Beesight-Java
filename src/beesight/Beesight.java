@@ -82,7 +82,8 @@ public class Beesight {
             try {
             sessionDataFile.createNewFile();
             } catch (IOException ex) {
-                ex.printStackTrace();
+                logger.log(Level.SEVERE, "Error creating new sessionData.csv file", ex);
+                System.exit(0);
             }
         }
         if (sessionList.isEmpty()) {
@@ -221,30 +222,47 @@ public class Beesight {
     
     public void removeOldSessions(){
     //removes sessions from the sessionList if they are older than the latest sessionData    
+        ArrayList<Long> timeStamps = new ArrayList<>();
         long latestSessionTS = 0;
+        long diff;
+        boolean needsRemoval = false;
         try {
             BufferedReader reader = new BufferedReader(new FileReader(sessionDataFile));
-            String line = reader.readLine();
-            //get UNIX timestamp of the first (latest) session in the file
-            latestSessionTS = Integer.parseInt(line.split(",")[0]);
+            String line = "";
+            int index = 1;
+            //get UNIX timestamp of the last x sessions in the sessionData file, where x = numSessions
+            while (((line = reader.readLine()) != null) && index <= numSessions) {
+                timeStamps.add(Long.parseLong(line.split(",")[0]));
+                index++;
+            }
         } catch (Exception ex) {
             logger.log(Level.SEVERE, "Error reading sessionData file", ex);
             System.exit(0);
         }
         //perform comparison and remove if necessary
+        latestSessionTS = timeStamps.get(0);
+        //we go backwards through the arraylist so that removing an item doesn't ruin the indexing
         for (int i = sessionList.size()-1; i >= 0; i--) {
-            long diff = sessionList.get(i).getTimestamp() - latestSessionTS;
             if (sessionList.get(i).getTimestamp() <= latestSessionTS) {
-                sessionList.remove(i);
+                needsRemoval = true;
             }
             /* secondary comparison necessary because insighttimer returns results with
                inconsistent timezones. If diff between the timestamps is exactly off by
                xHours (down to the second) it's a transposed timezone. This is not perfect
                but it will do!
             */
-            else if ((diff % 360) == 0) {
-                logger.log(Level.FINE, "Excluding this session, already recorded in diff timezone: " + sessionList.get(i).getComment());
+            else {
+                for (long ts : timeStamps) {
+                    diff = sessionList.get(i).getTimestamp() - ts;
+                    if (diff % 360 == 0) {
+                        needsRemoval = true;
+                    }
+                }
+            }
+            if (needsRemoval) {
+                logger.log(Level.FINE, "Excluding this session, already recorded: " + sessionList.get(i).getComment());
                 sessionList.remove(i);
+                needsRemoval = false;
             }
         }
     }
