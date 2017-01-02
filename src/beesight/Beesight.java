@@ -4,7 +4,6 @@ package beesight;
 import java.io.*;
 import java.time.LocalDateTime;
 import java.util.Properties;
-import java.util.Calendar;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.logging.*;
@@ -16,12 +15,11 @@ import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
-
-
+import com.google.gson.Gson;
 
 
 /**
- * Version 1.0 (17 December 2016)
+ * Version 2.0 (2 January 2017)
  * @author Phil Brosgol <phil.brosgol at gmail.com>
  */
 public class Beesight {
@@ -33,13 +31,12 @@ public class Beesight {
     String authToken;
     String goalName;
     String logLevel;
-    int gmtOffset;
     int numSessions;
     ArrayList<Session> sessionList;
     
     File sessionDataFile = new File("sessionData.csv");
     String INSIGHT_LOGIN_URL = "https://insighttimer.com/user_session";
-    String INSIGHT_CSV_URL = "https://insighttimer.com/sessions/export";
+    String INSIGHT_SESSIONS_URL = "https://insighttimer.com/sessions/all?p1=1&l1=";
     String BM_BASE_URL = "https://www.beeminder.com/api/v1/";
     
     public static void main(String[] args) {
@@ -137,7 +134,6 @@ public class Beesight {
             authToken = prop.getProperty("Beeminder_Auth_Token");
             goalName = prop.getProperty("Beeminder_Goal_Name");
             numSessions = Integer.parseInt(prop.getProperty("Number_of_Sessions_to_Sync"));
-            gmtOffset = Integer.parseInt(prop.getProperty("GMT_Offset"));
             logLevel = prop.getProperty("Log_Level");
             
             input.close();
@@ -177,55 +173,42 @@ public class Beesight {
         EntityUtils.consume(response.getEntity());
         
         //Now that we have authenticated, we can request the session data
-        HttpGet request = new HttpGet(INSIGHT_CSV_URL);
+        HttpGet request = new HttpGet(INSIGHT_SESSIONS_URL + Integer.toString(numSessions));
         response = client.execute(request);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-        String line = null;
-        int lines = 0;
-        logger.info("Parsing insight session data");
-        while ((line = reader.readLine()) != null && lines++ < (numSessions+2)) {
-            //skip the first two header lines, e.g. numSessions+2
-            if (lines > 2) {
-                //add session to the sessionList
-                logger.log(Level.FINE, "Parsing line: " + line);
-                sessionList.add(parseSession(line));
-            }
-        }
+        InputStreamReader reader = new InputStreamReader(response.getEntity().getContent());
+        Gson gson = new Gson();
+        sessionList = gson.fromJson(reader, Response.class).getSessions();
         reader.close();
         EntityUtils.consume(response.getEntity());
     }
     
-    public Session parseSession(String line){
-    // reads a line from the insighttimer csv file and returns a Session object    
-        Session session = new Session();
-        //line format is e.g.: 12/14/2016 16:08:07,32,Meditation,10 minute bells
-        String[] parts = line.split(",");
-        session.setMinutes(Integer.parseInt(parts[1]));
-        session.setComment(line); //just use the comment for debugging purposes I guess
-        //parse the date/time elements from the string
-        String[] tsParts = parts[0].split(" ");
-        String[] dateParts = tsParts[0].split("/");
-        String[] timeParts = tsParts[1].split(":");
-        int month = Integer.parseInt(dateParts[0]) -1; //first month is 0, not 1
-        int day = Integer.parseInt(dateParts[1]);
-        int year = Integer.parseInt(dateParts[2]);
-        int hour = Integer.parseInt(timeParts[0]);
-        int minute = Integer.parseInt(timeParts[1]);
-        int second = Integer.parseInt(timeParts[2]);
-        //generate a UNIX timestamp and add it to the session
-        Calendar cal = Calendar.getInstance();
-        cal.set(year, month, day, hour, minute, second);
-        cal.add(Calendar.HOUR_OF_DAY, gmtOffset);
-        session.setTimestamp(cal.getTimeInMillis()/1000);
-        return session;
-    }
-    
     public void removeOldSessions(){
-    //removes sessions from the sessionList if they are older than the latest sessionData    
+    // removes any duplicate sessions from sessionList by comparing IDs in the sessionData file
+        ArrayList<Long> idList = new ArrayList<>();
+        boolean needsRemoval = false;
+        // parse the sessionDataFile for IDs and add them to the list
+        try {
+            BufferedReader reader = new BufferedReader(new FileReader(sessionDataFile));
+            String line = "";
+            int index = 1;
+            while (((line = reader.readLine()) != null) && index <= numSessions) {
+                idList.add(Long.parseLong(line.split(",")[0]));
+                index++;
+            }
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, "Error reading sessionData file", ex);
+            System.exit(0);
+        }
+        // perform ID comparison and remove if a match is found
+        
+        
+        
+    
+    
+    
         ArrayList<Long> timeStamps = new ArrayList<>();
         long latestSessionTS = 0;
         long diff;
-        boolean needsRemoval = false;
         try {
             BufferedReader reader = new BufferedReader(new FileReader(sessionDataFile));
             String line = "";
@@ -240,23 +223,11 @@ public class Beesight {
             System.exit(0);
         }
         //perform comparison and remove if necessary
-        latestSessionTS = timeStamps.get(0);
-        //we go backwards through the arraylist so that removing an item doesn't ruin the indexing
-        for (int i = sessionList.size()-1; i >= 0; i--) {
-            if (sessionList.get(i).getTimestamp() <= latestSessionTS) {
-                needsRemoval = true;
-            }
-            /* secondary comparison necessary because insighttimer returns results with
-               inconsistent timezones. If diff between the timestamps is exactly off by
-               xHours (down to the second) it's a transposed timezone. This is not perfect
-               but it will do!
-            */
-            else {
-                for (long ts : timeStamps) {
-                    diff = sessionList.get(i).getTimestamp() - ts;
-                    if (diff % 360 == 0) {
-                        needsRemoval = true;
-                    }
+        //go backwards through the arrayList so taht removing an item doesn't wreck the indexing
+        for (int i = sessionList.size() -1; i >= 0; i--) {
+            for (long id : idList) {
+                if (id == sessionList.get(i).getId()) {
+                    needsRemoval = true;
                 }
             }
             if (needsRemoval) {
@@ -324,8 +295,8 @@ public class Beesight {
     //adds the latest sessions to the TOP of the file (prepends)
         String oldText = "";
         String line;
-        long timestamp;
-        int minutes;
+        long id;
+        double minutes;
         String comment;
         BufferedReader reader = new BufferedReader(new FileReader(sessionDataFile));
         //copy the entire file contents to memory
@@ -335,10 +306,10 @@ public class Beesight {
         reader.close();
         //prepend the new sessions to the file contents
         for (int i = (sessionList.size() -1); i >= 0; i--) {
-            timestamp = sessionList.get(i).getTimestamp();
+            id = sessionList.get(i).getId();
             minutes = sessionList.get(i).getMinutes();
             comment = sessionList.get(i).getComment();
-            line = timestamp + "," + minutes + ",\"" + comment + "\"\n";
+            line = id + "," + minutes + ",\"" + comment + "\"\n";
             oldText = line + oldText;
         }
         //write back to file

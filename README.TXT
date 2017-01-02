@@ -1,5 +1,5 @@
 =====================================
-Beesight (Java) Version 1.0
+Beesight (Java) Version 2.0
 =====================================
 
 OVERVIEW
@@ -21,7 +21,6 @@ INSTALL INSTRUCTIONS
 		Beeminder_Auth_Token=RJK7H6bnkf3sdyfb7FMp2
 		Beeminder_Goal_Name=Meditate
 		Number_of_Sessions_to_Sync=3
-		GMT_Offset=-5
 		Log_Level=INFO
    (NOTE: Possible log levels are FINE, INFO, SEVERE in order of detail)
    After you log in to Beeminder, visit https://www.beeminder.com/api/v1/auth_token.json 
@@ -48,12 +47,12 @@ USAGE INSTRUCTIONS
 *** To upload a bunch of old sessions, create a new sessionData.csv file
 	and put "0" (the number zero without quotes) on the first line.
 	
-NOTE ABOUT GMT_OFFSET SETTING
-InsightTimer.com has a wonky timezone calculation method, and no API to speak
-of. Sometimes the data they provide is in the correct timezone you specified
-in your account settings, and other times it's in GMT, and at other times
-it's some other timezone. Your best approach is to put the GMT offset for your
-timezone into the config.properties file.
-
-If anyone figures out how to force InsightTimer.com to serve a CSV file with
-a consistent timezone, please let me know and you will be credited.
+CHANGE LOG
+2017-01-02 Version 2.0
+- Now fetches insight session data via JSON. All timestamps should now be accurate
+- Now records session data with greater precision (seconds)
+- Removed GMT offset setting from the configuration file (no longer needed)
+- sessionData.csv file format is now different, reconciles based on sessionID rather
+	than timestamp
+2017-12-10 Version 1.0
+- Initial version
